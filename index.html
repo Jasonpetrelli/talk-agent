@@ -51,6 +51,7 @@
         const chat = document.getElementById('chat');
         const input = document.getElementById('input');
         const sendBtn = document.getElementById('sendBtn');
+        const sessionId = 'web-' + Date.now();
 
         input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
 
@@ -79,7 +80,7 @@
                 const resp = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ messages: [{ role: 'user', content: text }] })
+                    body: JSON.stringify({ messages: [{ role: 'user', content: text }], session_id: sessionId })
                 });
                 const data = await resp.json();
                 const reply = data.choices?.[0]?.message?.content || '请求失败';

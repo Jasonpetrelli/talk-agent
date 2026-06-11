@@ -29,6 +29,7 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     model: str = "ops-agent"
     messages: list[Message]
+    session_id: str = ""
 
 
 class ChatResponse(BaseModel):
@@ -46,8 +47,11 @@ def chat_completions(req: ChatRequest):
     if not user_msg:
         return _reply("您好，请问有什么可以帮您？", req.model)
 
+    # 使用 session_id，如果没有则用 default
+    session_id = req.session_id or "default"
+
     try:
-        reply = ops_agent(user_msg)
+        reply = ops_agent(user_msg, session_id)
     except Exception as e:
         reply = f"处理出错了：{e}"
 

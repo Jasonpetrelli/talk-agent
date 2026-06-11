@@ -21,6 +21,7 @@ QUOTE_PROMPT = """你是一个询价助手。从用户消息中提取询价信�
 - "多少钱"、"报价"、"价格"、"要"、"买"、"订"、"采购" → 意图是 quote
 - 只要提到了商品+数量（哪怕没有"多少钱"），也是 quote
 - "查"、"看" → 意图是 query_price
+- "发XX"、"到XX"、"寄XX" → 意图是 quote（补充地区），从消息中提取地区
 - 识别不出意图返回 {{"intent": "unknown"}}
 
 示例：
@@ -35,6 +36,9 @@ QUOTE_PROMPT = """你是一个询价助手。从用户消息中提取询价信�
 
 用户：保温杯50个
 {{"intent": "quote", "product": "保温杯", "quantity": 50, "region": ""}}
+
+用户：发上海
+{{"intent": "quote", "product": "", "quantity": 1, "region": "上海"}}
 
 用户：查客户 凌晨公司
 {{"intent": "query_customer", "product": "", "quantity": 1, "region": ""}}

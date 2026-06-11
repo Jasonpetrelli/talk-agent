@@ -118,21 +118,47 @@ def query_product(product_code: str) -> Optional[dict]:
             ).fetchone()
 
         if not row:
-            # 模糊搜索得力商品（多关键词）
-            keywords = [k for k in product_code.replace("得力", "").replace("deli", "").strip() if k]
-            if not keywords:
-                keywords = [product_code]
-            where = " AND ".join(["dp.material_desc LIKE ?"] * len(keywords))
-            params = [f"%{k}%" for k in keywords]
-            row = conn.execute(f"""
+            # 精确匹配得力商品
+            clean = product_code.replace("DL-", "").replace("得力", "").replace("deli", "").strip()
+            if clean:
+                row = conn.execute("""
+                    SELECT dp.material_code, dp.material_desc, dp.category,
+                           dp.weight_grams, dp.base_price, 'DL-' || dp.material_code as product_code
+                    FROM deli_products dp
+                    WHERE dp.material_code = ? OR dp.material_desc = ?
+                """, (clean, product_code)).fetchone()
+
+        if not row and clean:
+            # 模糊匹配得力商品
+            row = conn.execute("""
                 SELECT dp.material_code, dp.material_desc, dp.category,
                        dp.weight_grams, dp.base_price, 'DL-' || dp.material_code as product_code
                 FROM deli_products dp
-                WHERE {where}
+                WHERE dp.material_desc LIKE ?
                 LIMIT 1
-            """, params).fetchone()
+            """, (f"%{clean}%",)).fetchone()
 
-            if row:
+            # 多关键词匹配
+            if not row:
+                import re as _re
+                parts = _re.split(r'[（(、/\s]+', clean)
+                new_parts = []
+                for p in parts:
+                    new_parts.extend(_re.split(r'(?<=[a-zA-Z0-9])(?=[一-鿿])|(?<=[一-鿿])(?=[a-zA-Z0-9])', p))
+                parts = [p for p in new_parts if len(p) >= 2]
+                if parts:
+                    where = " AND ".join(["dp.material_desc LIKE ?"] * len(parts))
+                    params = [f"%{p}%" for p in parts]
+                    row = conn.execute(f"""
+                        SELECT dp.material_code, dp.material_desc, dp.category,
+                               dp.weight_grams, dp.base_price, 'DL-' || dp.material_code as product_code
+                        FROM deli_products dp
+                        WHERE {where}
+                        LIMIT 1
+                    """, params).fetchone()
+
+        if row:
+            if "weight_grams" in row.keys():
                 return {
                     "product_code": row["product_code"],
                     "product_name": row["material_desc"],
@@ -140,15 +166,90 @@ def query_product(product_code: str) -> Optional[dict]:
                     "weight_kg": (row["weight_grams"] or 0) / 1000,
                     "base_price": row["base_price"]
                 }
-            return None
+            return {
+                "product_code": row["product_code"],
+                "product_name": row["product_name"],
+                "category": row["category"],
+                "weight_kg": row["weight_kg"] or 0,
+                "base_price": None
+            }
+        return None
+    finally:
+        conn.close()
 
-        return {
-            "product_code": row["product_code"],
-            "product_name": row["product_name"],
-            "category": row["category"],
-            "weight_kg": row["weight_kg"] or 0,
-            "base_price": None
-        }
+
+def search_products(keyword: str) -> list:
+    """搜索商品，返回匹配列表"""
+    conn = get_db()
+    try:
+        results = []
+
+        # 先精确匹配 products 表
+        rows = conn.execute(
+            "SELECT product_code, product_name, category FROM products WHERE product_code = ? OR product_name = ?",
+            (keyword.upper(), keyword)
+        ).fetchall()
+        for r in rows:
+            results.append({"code": r["product_code"], "name": r["product_name"], "category": r["category"]})
+
+        # 精确匹配得力商品
+        if not results:
+            clean = keyword.replace("DL-", "").replace("得力", "").replace("deli", "").strip()
+            if clean:
+                rows = conn.execute("""
+                    SELECT 'DL-' || dp.material_code as code, dp.material_desc as name, dp.category
+                    FROM deli_products dp
+                    WHERE dp.material_code = ? OR dp.material_desc = ?
+                """, (clean, keyword)).fetchall()
+                for r in rows:
+                    results.append({"code": r["code"], "name": r["name"], "category": r["category"]})
+
+        # 模糊匹配 products 表
+        if not results:
+            rows = conn.execute(
+                "SELECT product_code, product_name, category FROM products WHERE product_name LIKE ? OR product_code LIKE ? LIMIT 10",
+                (f"%{keyword}%", f"%{keyword}%")
+            ).fetchall()
+            for r in rows:
+                results.append({"code": r["product_code"], "name": r["product_name"], "category": r["category"]})
+
+        # 模糊匹配得力商品（多关键词）
+        if not results:
+            clean = keyword.replace("得力", "").replace("deli", "").strip()
+            if clean:
+                # 尝试整体模糊
+                rows = conn.execute("""
+                    SELECT 'DL-' || dp.material_code as code, dp.material_desc as name, dp.category
+                    FROM deli_products dp
+                    WHERE dp.material_desc LIKE ?
+                    LIMIT 10
+                """, (f"%{clean}%",)).fetchall()
+                for r in rows:
+                    results.append({"code": r["code"], "name": r["name"], "category": r["category"]})
+
+                # 如果没匹配到，按中英文边界拆分后 AND 搜索
+                if not results:
+                    import re as _re
+                    # 先按常见分隔符拆
+                    parts = _re.split(r'[（(、/\s]+', clean)
+                    # 再按中英文边界拆
+                    new_parts = []
+                    for p in parts:
+                        new_parts.extend(_re.split(r'(?<=[a-zA-Z0-9])(?=[一-鿿])|(?<=[一-鿿])(?=[a-zA-Z0-9])', p))
+                    parts = [p for p in new_parts if len(p) >= 2]
+                    if parts:
+                        where = " AND ".join(["dp.material_desc LIKE ?"] * len(parts))
+                        params = [f"%{p}%" for p in parts]
+                        rows = conn.execute(f"""
+                            SELECT 'DL-' || dp.material_code as code, dp.material_desc as name, dp.category
+                            FROM deli_products dp
+                            WHERE {where}
+                            LIMIT 10
+                        """, params).fetchall()
+                        for r in rows:
+                            results.append({"code": r["code"], "name": r["name"], "category": r["category"]})
+
+        return results
     finally:
         conn.close()
 
