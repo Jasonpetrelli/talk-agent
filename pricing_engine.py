@@ -330,6 +330,17 @@ def query_price_columns(product_code: str) -> dict:
         conn.close()
 
 
+def build_default_price_columns(base_price: float) -> dict:
+    """按底价生成默认价格列"""
+    return {
+        "price_85_95": base_price * 0.85 * 0.95,
+        "price_85": base_price * 0.85,
+        "price_86_5": base_price * 0.865,
+        "price_1_05": base_price * 1.05,
+        "price_1_15": base_price * 1.15
+    }
+
+
 def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
     """
     计算最终报价
@@ -344,6 +355,7 @@ def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
     weight_grams = product.get("weight_grams", 0)
     weight_kg = round(weight_grams) / 1000  # 克转千克，先四舍五入为整数克
     weight_grams_int = round(weight_grams)  # 整数克
+    resolved_product_code = product["product_code"]
 
     # 2. 判断商品分类
     category = classify_product(product_name)
@@ -357,7 +369,7 @@ def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
         }
 
     # 3. 查询底价
-    price_info = query_best_price(product["product_code"])
+    price_info = query_best_price(resolved_product_code)
     if not price_info:
         return {"success": False, "message": f"未找到 {product_name} 的报价"}
 
@@ -367,7 +379,8 @@ def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
     # 4. 计算单价（多价格列比价）
     if category == "heavy":
         # 重货：出厂价(86.5)包邮
-        unit_price = base_price * 0.865
+        price_cols = query_price_columns(resolved_product_code)
+        unit_price = price_cols.get("price_86_5") or base_price * 0.865
         shipping = 0
         shipping_rule = "包邮（重货）"
     elif category == "copy_paper":
@@ -388,11 +401,14 @@ def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
             shipping = calculate_shipping(total_weight, zone)
 
             # 从数据库读取价格列
-            price_cols = query_price_columns(product_code)
+            price_cols = query_price_columns(resolved_product_code)
+            if not price_cols:
+                price_cols = build_default_price_columns(base_price)
             if price_cols:
                 # 计算每个价格列的含运费总价，取最低
                 best_price = None
                 best_total = float('inf')
+                best_shipping = 0
                 best_rule = ""
 
                 for col_name, col_price in price_cols.items():
@@ -403,26 +419,31 @@ def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
                     if col_name == "price_85_95":
                         # 85*95 需要加运费
                         unit = col_price
-                        total = unit * quantity + shipping
+                        col_shipping = shipping
+                        total = unit * quantity + col_shipping
                         rule = f"{col_name} + 运费"
                     elif col_name == "price_85":
                         # 85 包邮
                         unit = col_price
+                        col_shipping = 0
                         total = unit * quantity
                         rule = f"{col_name} 包邮"
                     elif col_name == "price_86_5":
                         # 86.5 包邮
                         unit = col_price
+                        col_shipping = 0
                         total = unit * quantity
                         rule = f"{col_name} 包邮"
                     elif col_name == "price_1_05":
                         # 1.05 需要加运费
                         unit = col_price
-                        total = unit * quantity + shipping
+                        col_shipping = shipping
+                        total = unit * quantity + col_shipping
                         rule = f"{col_name} + 运费"
                     elif col_name == "price_1_15":
                         # 1.15 包邮
                         unit = col_price
+                        col_shipping = 0
                         total = unit * quantity
                         rule = f"{col_name} 包邮"
                     else:
@@ -431,19 +452,20 @@ def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
                     if total < best_total:
                         best_total = total
                         best_price = unit
+                        best_shipping = col_shipping
                         best_rule = rule
 
                 if best_price is not None:
                     unit_price = best_price
-                    shipping_rule = f"{best_rule}，{zone}：{weight_grams_int}g/件 × {quantity}件 × {REGION_ZONES[zone]}元/kg + 4.5元基础费"
+                    shipping = best_shipping
+                    if shipping:
+                        shipping_rule = f"{best_rule}，{zone}：{weight_grams_int}g/件 × {quantity}件 × {REGION_ZONES[zone]}元/kg + 4.5元基础费"
+                    else:
+                        shipping_rule = best_rule
                 else:
                     # 没有有效价格列，用默认计算
                     unit_price = base_price * 0.85 * 0.95
                     shipping_rule = f"{zone}：{weight_grams_int}g/件 × {quantity}件 × {REGION_ZONES[zone]}元/kg + 4.5元基础费"
-            else:
-                # 没有价格列数据，用默认计算
-                unit_price = base_price * 0.85 * 0.95
-                shipping_rule = f"{zone}：{weight_grams_int}g/件 × {quantity}件 × {REGION_ZONES[zone]}元/kg + 4.5元基础费"
 
     # 5. 计算总价
     goods_total = unit_price * quantity
@@ -451,7 +473,7 @@ def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
         final_total = goods_total + shipping
         # 低金额规则：总价<50元加5元
         low_amount_fee = 0
-        if final_total < 50:
+        if category == "normal" and final_total < 50:
             low_amount_fee = 5
             final_total += 5
     else:
@@ -472,7 +494,7 @@ def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
             f"运费：{shipping:.2f} 元（{shipping_rule}）",
         ])
         if low_amount_fee > 0:
-            lines.append(f"低金额附加费：{low_amount_fee} 元（订单总价<50元）")
+            lines.append(f"低金额附加费：{low_amount_fee} 元（注：因订单总价低于50元，已默认加5元基础费用）")
         lines.append(f"─────────────")
         lines.append(f"合计：{final_total:.2f} 元")
     else:
