@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 data.db
 .sessions.json
+.env
+.venv/
+.env.example
