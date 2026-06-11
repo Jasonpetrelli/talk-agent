@@ -79,11 +79,13 @@ def import_deli_products():
             price_1_05 = float(row[15]) if row[15] else None
             price_1_15 = float(row[16]) if row[16] else None
 
-            # 重量可能不是数字，需要安全转换
-            try:
-                weight_grams = float(row[22]) if row[22] and str(row[22]).replace('.', '').isdigit() else 0
-            except (ValueError, TypeError):
-                weight_grams = 0
+            # 重量安全转换（第23列是重量）
+            weight_grams = 0
+            if row[23] is not None:
+                try:
+                    weight_grams = float(row[23])
+                except (ValueError, TypeError):
+                    weight_grams = 0
 
             if not material_code or not material_desc:
                 continue
