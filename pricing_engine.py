@@ -163,13 +163,15 @@ def query_product(product_code: str) -> Optional[dict]:
                     "product_code": row["product_code"],
                     "product_name": row["material_desc"],
                     "category": row["category"],
-                    "weight_kg": (row["weight_grams"] or 0) / 1000,
+                    "weight_grams": row["weight_grams"] or 0,
+                    "weight_kg": round(row["weight_grams"] or 0) / 1000,
                     "base_price": row["base_price"]
                 }
             return {
                 "product_code": row["product_code"],
                 "product_name": row["product_name"],
                 "category": row["category"],
+                "weight_grams": (row["weight_kg"] or 0) * 1000,
                 "weight_kg": row["weight_kg"] or 0,
                 "base_price": None
             }
@@ -339,7 +341,9 @@ def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
         return {"success": False, "message": f"未找到商品 {product_code}"}
 
     product_name = product["product_name"]
-    weight_kg = product["weight_kg"]
+    weight_grams = product.get("weight_grams", 0)
+    weight_kg = round(weight_grams) / 1000  # 克转千克，先四舍五入为整数克
+    weight_grams_int = round(weight_grams)  # 整数克
 
     # 2. 判断商品分类
     category = classify_product(product_name)
@@ -431,15 +435,15 @@ def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
 
                 if best_price is not None:
                     unit_price = best_price
-                    shipping_rule = f"{best_rule}，{zone}：{weight_kg}kg/件 × {quantity}件 × {REGION_ZONES[zone]}元/kg + 4.5元基础费"
+                    shipping_rule = f"{best_rule}，{zone}：{weight_grams_int}g/件 × {quantity}件 × {REGION_ZONES[zone]}元/kg + 4.5元基础费"
                 else:
                     # 没有有效价格列，用默认计算
                     unit_price = base_price * 0.85 * 0.95
-                    shipping_rule = f"{zone}：{weight_kg}kg/件 × {quantity}件 × {REGION_ZONES[zone]}元/kg + 4.5元基础费"
+                    shipping_rule = f"{zone}：{weight_grams_int}g/件 × {quantity}件 × {REGION_ZONES[zone]}元/kg + 4.5元基础费"
             else:
                 # 没有价格列数据，用默认计算
                 unit_price = base_price * 0.85 * 0.95
-                shipping_rule = f"{zone}：{weight_kg}kg/件 × {quantity}件 × {REGION_ZONES[zone]}元/kg + 4.5元基础费"
+                shipping_rule = f"{zone}：{weight_grams_int}g/件 × {quantity}件 × {REGION_ZONES[zone]}元/kg + 4.5元基础费"
 
     # 5. 计算总价
     goods_total = unit_price * quantity
@@ -458,9 +462,9 @@ def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
     lines = [
         f"【{product_name}】",
         f"供应商：{supplier}",
-        f"单价：{unit_price:.2f} 元/件",
+        f"单价：{unit_price} 元/件",
         f"数量：{quantity} 件",
-        f"商品小计：{goods_total:.2f} 元",
+        f"商品小计：{goods_total} 元",
     ]
 
     if shipping is not None:
