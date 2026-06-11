@@ -4,12 +4,21 @@ WorkBuddy 适配层 - OpenAI 兼容接口，包装 ops_agent
 """
 
 import time
+from pathlib import Path
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from ops_agent import ops_agent
 
 app = FastAPI(title="WorkBuddy Adapter")
+
+STATIC_DIR = Path(__file__).parent
+
+
+@app.get("/", response_class=HTMLResponse)
+def index():
+    return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 
 
 class Message(BaseModel):

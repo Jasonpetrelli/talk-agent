@@ -50,14 +50,22 @@ def query_price(product_code: str):
 
         # 如果精确匹配失败，尝试模糊搜索得力商品
         if not row:
-            cur = conn.execute("""
+            # 支持多关键词搜索，如"得力订书钉" -> "得力" AND "订书钉"
+            keywords = [k for k in product_code.replace("得力", "").replace("deli", "").strip() if k]
+            if not keywords:
+                keywords = [product_code]
+
+            where_conditions = " AND ".join(["dp.material_desc LIKE ?"] * len(keywords))
+            where_params = [f"%{k}%" for k in keywords]
+
+            cur = conn.execute(f"""
                 SELECT dp.material_code, dp.material_desc, dp.base_price,
                        s.name AS supplier_name
                 FROM deli_products dp
                 JOIN suppliers s ON s.id = 3
-                WHERE dp.material_desc LIKE ?
+                WHERE {where_conditions}
                 LIMIT 1
-            """, (f"%{product_code}%",))
+            """, where_params)
             row = cur.fetchone()
             if row:
                 return {

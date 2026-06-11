@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>运营 Agent 测试</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 20px; color: #333; }
+        .chat-box { background: #fff; border-radius: 8px; padding: 20px; min-height: 400px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .message { margin-bottom: 16px; }
+        .message.user { text-align: right; }
+        .message .bubble { display: inline-block; padding: 12px 16px; border-radius: 12px; max-width: 80%; text-align: left; white-space: pre-wrap; }
+        .message.user .bubble { background: #0084ff; color: #fff; border-bottom-right-radius: 4px; }
+        .message.bot .bubble { background: #f0f0f0; color: #333; border-bottom-left-radius: 4px; }
+        .message .label { font-size: 12px; color: #999; margin-bottom: 4px; }
+        .input-box { display: flex; gap: 10px; }
+        .input-box input { flex: 1; padding: 12px 16px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; outline: none; }
+        .input-box input:focus { border-color: #0084ff; }
+        .input-box button { padding: 12px 24px; background: #0084ff; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; }
+        .input-box button:hover { background: #0073e6; }
+        .input-box button:disabled { background: #ccc; cursor: not-allowed; }
+        .quick-btns { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+        .quick-btns button { padding: 6px 12px; background: #fff; border: 1px solid #ddd; border-radius: 16px; font-size: 13px; cursor: pointer; }
+        .quick-btns button:hover { border-color: #0084ff; color: #0084ff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>运营 Agent 测试</h1>
+        <div class="chat-box" id="chat"></div>
+        <div class="input-box">
+            <input type="text" id="input" placeholder="输入问题，如：得力订书钉多少钱" autofocus>
+            <button id="sendBtn" onclick="send()">发送</button>
+        </div>
+        <div class="quick-btns">
+            <button onclick="quick('查得力订书钉价格')">得力订书钉价格</button>
+            <button onclick="quick('得力文件夹多少钱')">得力文件夹</button>
+            <button onclick="quick('保温杯多少钱')">保温杯价格</button>
+            <button onclick="quick('查客户 凌晨公司')">查客户</button>
+            <button onclick="quick('今天卖了多少')">今日GMV</button>
+            <button onclick="quick('江浙沪运费')">江浙沪运费</button>
+            <button onclick="quick('帮助')">帮助</button>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8080/v1/chat/completions';
+        const chat = document.getElementById('chat');
+        const input = document.getElementById('input');
+        const sendBtn = document.getElementById('sendBtn');
+
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+
+        function addMessage(text, type) {
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
+            div.innerHTML = `<div class="label">${type === 'user' ? '你' : 'Agent'}</div><div class="bubble">${text}</div>`;
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function quick(text) {
+            input.value = text;
+            send();
+        }
+
+        async function send() {
+            const text = input.value.trim();
+            if (!text) return;
+
+            addMessage(text, 'user');
+            input.value = '';
+            sendBtn.disabled = true;
+
+            try {
+                const resp = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ messages: [{ role: 'user', content: text }] })
+                });
+                const data = await resp.json();
+                const reply = data.choices?.[0]?.message?.content || '请求失败';
+                addMessage(reply, 'bot');
+            } catch (err) {
+                addMessage('连接失败：' + err.message, 'bot');
+            }
+
+            sendBtn.disabled = false;
+            input.focus();
+        }
+    </script>
+</body>
+</html>
