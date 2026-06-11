@@ -98,6 +98,32 @@ def init():
         FOREIGN KEY (customer_id) REFERENCES customers(id)
     )""")
 
+    # 报价规则
+    cur.execute("""CREATE TABLE IF NOT EXISTS pricing_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_type TEXT NOT NULL,
+        rule_name TEXT NOT NULL,
+        rule_content TEXT NOT NULL,
+        is_active INTEGER DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+
+    # 得力供应商
+    cur.execute("""CREATE TABLE IF NOT EXISTS deli_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        material_code TEXT UNIQUE,
+        material_desc TEXT,
+        category TEXT,
+        weight_grams REAL,
+        base_price REAL,
+        price_85_95 REAL,
+        price_85 REAL,
+        price_86_5 REAL,
+        price_1_05 REAL,
+        price_1_15 REAL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""")
+
     # ===== 示例数据 =====
 
     suppliers = [
@@ -109,6 +135,7 @@ def init():
     products = [
         ("ABC-100", "保温杯500ml", "日用", 0.3),
         ("DEF-200", "电热水壶1.5L", "家电", 1.2),
+        ("DSH-100", "电热水壶2L", "家电", 1.0),
         ("GHI-300", "不锈钢炒锅32cm", "厨具", 2.5),
     ]
     cur.executemany("INSERT OR REPLACE INTO products (product_code, product_name, category, weight_kg, is_active) VALUES (?, ?, ?, ?, 1)", products)
@@ -118,6 +145,8 @@ def init():
         (2, "ABC-100", 13.0, 20.5, 0, "2026-06-01", None),
         (1, "DEF-200", 45.0, 79.0, 0, "2026-06-01", None),
         (2, "DEF-200", 43.0, 75.0, 1, "2026-06-01", None),
+        (1, "DSH-100", 38.0, 65.0, 1, "2026-06-01", None),
+        (2, "DSH-100", 40.0, 68.0, 0, "2026-06-01", None),
         (1, "GHI-300", 58.0, 99.0, 1, "2026-06-01", None),
     ]
     cur.executemany("INSERT OR REPLACE INTO supplier_quotes (supplier_id, product_code, base_price, suggested_price, is_preferred, effective_date, expire_date) VALUES (?, ?, ?, ?, ?, ?, ?)", quotes)

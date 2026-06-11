@@ -37,6 +37,7 @@ def query_price(product_code: str):
     """查询商品推荐报价"""
     conn = get_db()
     try:
+        # 先精确匹配
         cur = conn.execute("""
             SELECT sq.base_price, s.name AS supplier_name, sq.suggested_price
             FROM supplier_quotes sq
@@ -46,6 +47,27 @@ def query_price(product_code: str):
             ORDER BY sq.base_price ASC LIMIT 1
         """, (product_code.upper(),))
         row = cur.fetchone()
+
+        # 如果精确匹配失败，尝试模糊搜索得力商品
+        if not row:
+            cur = conn.execute("""
+                SELECT dp.material_code, dp.material_desc, dp.base_price,
+                       s.name AS supplier_name
+                FROM deli_products dp
+                JOIN suppliers s ON s.id = 3
+                WHERE dp.material_desc LIKE ?
+                LIMIT 1
+            """, (f"%{product_code}%",))
+            row = cur.fetchone()
+            if row:
+                return {
+                    "product_code": f"DL-{row['material_code']}",
+                    "product_name": row["material_desc"],
+                    "base_price": row["base_price"],
+                    "supplier_name": row["supplier_name"],
+                    "suggested_price": None
+                }
+
         if not row:
             raise HTTPException(404, "未找到该商品")
         return {"product_code": product_code.upper(), "base_price": row["base_price"],
