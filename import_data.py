@@ -70,6 +70,12 @@ def import_deli_products():
             huohao = str(row[3]) if row[3] else None         # 货号
             material_desc = str(row[4]) if row[4] else None  # 物料描述
             category = str(row[1]) if row[1] else None       # 物料组描述
+            outer_package = str(row[5]) if row[5] else None  # 外包装
+            mid_package2 = str(row[6]) if row[6] else None   # 中包装2
+            mid_package1 = str(row[7]) if row[7] else None   # 中包装1
+            small_package = str(row[8]) if row[8] else None  # 小包装
+            min_sales_unit = str(row[9]) if row[9] else None # 最小销售单位
+            price_type = str(row[10]) if row[10] else None   # 价格类型
             base_price = float(row[11]) if row[11] else 0    # 单价
 
             # 价格列（公式计算后的值）
@@ -79,6 +85,13 @@ def import_deli_products():
             price_1_05 = float(row[15]) if row[15] else None
             price_1_15 = float(row[16]) if row[16] else None
 
+            barcode = str(row[17]) if row[17] else None      # 条形码
+            external_group = str(row[18]) if row[18] else None # 外部物料组
+            product_source = str(row[19]) if row[19] else None # 产品来源描述
+            new_product_start = row[20] if row[20] else None   # 新品有效开始日期
+            new_product_end = row[21] if row[21] else None     # 新品有效结束日期
+            exclusive_type = str(row[22]) if row[22] else None # 产品专供类型
+
             # 重量安全转换（第23列是重量）
             weight_grams = 0
             if row[23] is not None:
@@ -87,17 +100,32 @@ def import_deli_products():
                 except (ValueError, TypeError):
                     weight_grams = 0
 
+            quantity = int(row[24]) if row[24] else None      # 数量
+            amount = float(row[25]) if row[25] else None      # 金额
+            total_weight = float(row[26]) if row[26] else None # 总重量
+            price_85_95_calc = float(row[27]) if row[27] else None # 85-95
+
             if not material_code or not material_desc:
                 continue
 
-            # 插入 deli_products
+            # 插入 deli_products（完整字段）
             cur.execute("""
                 INSERT OR REPLACE INTO deli_products
-                (material_code, huohao, material_desc, category, weight_grams, base_price,
-                 price_85_95, price_85, price_86_5, price_1_05, price_1_15)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (material_code, huohao, material_desc, category, weight_grams, base_price,
-                  price_85_95, price_85, price_86_5, price_1_05, price_1_15))
+                (material_code, huohao, material_desc, category,
+                 outer_package, mid_package2, mid_package1, small_package,
+                 min_sales_unit, price_type, base_price,
+                 price_85_95, price_85, price_86_5, price_1_05, price_1_15,
+                 barcode, external_group, product_source,
+                 new_product_start, new_product_end, exclusive_type,
+                 weight_grams, quantity, amount, total_weight, price_85_95_calc)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (material_code, huohao, material_desc, category,
+                  outer_package, mid_package2, mid_package1, small_package,
+                  min_sales_unit, price_type, base_price,
+                  price_85_95, price_85, price_86_5, price_1_05, price_1_15,
+                  barcode, external_group, product_source,
+                  new_product_start, new_product_end, exclusive_type,
+                  weight_grams, quantity, amount, total_weight, price_85_95_calc))
 
             # 同时插入 products 表（统一格式）
             product_code = f"DL-{material_code}"
