@@ -67,10 +67,16 @@ def import_deli_products():
     for row in ws.iter_rows(min_row=2, values_only=True):
         try:
             material_code = str(row[2]) if row[2] else None  # 物料编码
+            huohao = str(row[3]) if row[3] else None         # 货号
             material_desc = str(row[4]) if row[4] else None  # 物料描述
             category = str(row[1]) if row[1] else None       # 物料组描述
-            weight_grams = float(row[22]) if row[22] else 0  # 重量（克）
             base_price = float(row[11]) if row[11] else 0    # 单价
+
+            # 重量可能不是数字，需要安全转换
+            try:
+                weight_grams = float(row[22]) if row[22] and str(row[22]).replace('.', '').isdigit() else 0
+            except (ValueError, TypeError):
+                weight_grams = 0
 
             if not material_code or not material_desc:
                 continue
@@ -78,9 +84,9 @@ def import_deli_products():
             # 插入 deli_products
             cur.execute("""
                 INSERT OR REPLACE INTO deli_products
-                (material_code, material_desc, category, weight_grams, base_price)
-                VALUES (?, ?, ?, ?, ?)
-            """, (material_code, material_desc, category, weight_grams, base_price))
+                (material_code, huohao, material_desc, category, weight_grams, base_price)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (material_code, huohao, material_desc, category, weight_grams, base_price))
 
             # 同时插入 products 表（统一格式）
             product_code = f"DL-{material_code}"

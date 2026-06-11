@@ -53,9 +53,10 @@ def handle_unknown(user_msg: str, session_id: str) -> str:
         region = session.get("region", "")
         matches = search_products(saved_product)
 
-        # 用户输入序号
-        if user_msg.strip().isdigit():
-            idx = int(user_msg.strip()) - 1
+        # 用户输入序号（小数字）或型号（长数字/字母）
+        user_input = user_msg.strip()
+        if user_input.isdigit() and len(user_input) <= 2:
+            idx = int(user_input) - 1
             # 优先从 session 中的 matches 列表选择
             saved_matches = session.get("matches", [])
             if saved_matches and 0 <= idx < len(saved_matches):
@@ -81,8 +82,31 @@ def handle_unknown(user_msg: str, session_id: str) -> str:
             else:
                 return f"序号超出范围，请输入 1-{len(saved_matches or matches)} 之间的数字"
 
-        # 用户输入型号关键词
+        # 用户输入型号关键词（如"33296"）
         product_hint = user_msg.strip()
+        # 先从 session 的匹配列表里找
+        saved_matches = session.get("matches", [])
+        matched = [m for m in saved_matches if product_hint in m["code"] or product_hint in m["name"]]
+        if len(matched) == 1:
+            product = matched[0]["code"]
+            if not region:
+                # 保留已有 session 数据，只更新 product
+                update_session(session_id, product=product)
+                return f"收到！{matched[0]['name']} {quantity} 件。\n请告诉我收货地区（省份或城市），我来算含运费的报价。\n例如：杭州、上海、广东"
+            result = calculate_quote(product, quantity, region)
+            if result["success"]:
+                clear_session(session_id)
+                return result["message"]
+            return result["message"]
+        elif len(matched) > 1:
+            update_session(session_id, matches=matched)
+            lines = [f"找到 {len(matched)} 个相关商品，您要哪个？"]
+            for i, m in enumerate(matched, 1):
+                lines.append(f"  {i}. {m['name']}")
+            lines.append(f"\n回复序号或完整型号即可")
+            return "\n".join(lines)
+
+        # session 列表没找到，从数据库搜
         matches = search_products(product_hint)
         if len(matches) == 1:
             product = matches[0]["code"]
@@ -115,6 +139,13 @@ def handle_quote(info: dict, session_id: str) -> str:
     region = info.get("region", "")
 
     session = get_session(session_id)
+
+    # 如果 session 中有数据，优先使用 session 的 quantity 和 region
+    if session and session.get("pending_quote"):
+        if not quantity or quantity == 1:
+            quantity = session.get("quantity", quantity)
+        if not region:
+            region = session.get("region", region)
 
     # 用户只提供了地区（如"发上海"），更新会话地区，但仍需选型号
     if not product and region and session and session.get("pending_quote"):
@@ -150,9 +181,10 @@ def handle_quote(info: dict, session_id: str) -> str:
     matches = search_products(product)
     if len(matches) > 5:
         # 保存会话状态（保留已有 region）
-        update_session(session_id, product=product, quantity=quantity, pending_quote=True)
+        update_data = {"product": product, "quantity": quantity, "pending_quote": True, "matches": matches}
         if region:
-            update_session(session_id, region=region)
+            update_data["region"] = region
+        update_session(session_id, **update_data)
         lines = [f"找到 {len(matches)} 个相关商品，型号太多了，请加个关键词精确一下："]
         for m in matches[:8]:
             lines.append(f"  - {m['name']}")
@@ -162,9 +194,10 @@ def handle_quote(info: dict, session_id: str) -> str:
         return "\n".join(lines)
     elif len(matches) > 1:
         # 保存会话状态（保留已有 region）
-        update_session(session_id, product=product, quantity=quantity, pending_quote=True)
+        update_data = {"product": product, "quantity": quantity, "pending_quote": True, "matches": matches}
         if region:
-            update_session(session_id, region=region)
+            update_data["region"] = region
+        update_session(session_id, **update_data)
         lines = [f"找到 {len(matches)} 个相关商品，您要哪个？"]
         for i, m in enumerate(matches, 1):
             lines.append(f"  {i}. {m['name']}")

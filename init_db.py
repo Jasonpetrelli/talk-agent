@@ -112,6 +112,7 @@ def init():
     cur.execute("""CREATE TABLE IF NOT EXISTS deli_products (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         material_code TEXT UNIQUE,
+        huohao TEXT,
         material_desc TEXT,
         category TEXT,
         weight_grams REAL,

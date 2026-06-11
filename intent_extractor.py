@@ -48,6 +48,14 @@ QUOTE_PROMPT = """你是一个询价助手。从用户消息中提取询价信�
 
 def extract_quote_info(user_msg: str) -> dict:
     """提取询价信息"""
+    # 快速处理：纯数字或短型号，直接返回 quote 意图
+    msg = user_msg.strip()
+    if msg.isdigit() and len(msg) <= 6:
+        return {"intent": "quote", "product": msg, "quantity": 1, "region": ""}
+    if len(msg) <= 10 and any(c.isalpha() for c in msg) and not any(kw in msg for kw in ["查", "改", "帮助", "help"]):
+        # 可能是型号，直接尝试
+        pass
+
     try:
         client = anthropic.Anthropic()
         resp = client.messages.create(

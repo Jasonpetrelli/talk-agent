@@ -118,15 +118,15 @@ def query_product(product_code: str) -> Optional[dict]:
             ).fetchone()
 
         if not row:
-            # 精确匹配得力商品
+            # 精确匹配得力商品（物料编码、货号、描述）
             clean = product_code.replace("DL-", "").replace("得力", "").replace("deli", "").strip()
             if clean:
                 row = conn.execute("""
                     SELECT dp.material_code, dp.material_desc, dp.category,
                            dp.weight_grams, dp.base_price, 'DL-' || dp.material_code as product_code
                     FROM deli_products dp
-                    WHERE dp.material_code = ? OR dp.material_desc = ?
-                """, (clean, product_code)).fetchone()
+                    WHERE dp.material_code = ? OR dp.huohao = ? OR dp.material_desc = ?
+                """, (clean, clean, product_code)).fetchone()
 
         if not row and clean:
             # 模糊匹配得力商品
@@ -192,15 +192,15 @@ def search_products(keyword: str) -> list:
         for r in rows:
             results.append({"code": r["product_code"], "name": r["product_name"], "category": r["category"]})
 
-        # 精确匹配得力商品
+        # 精确匹配得力商品（物料编码、货号、描述）
         if not results:
             clean = keyword.replace("DL-", "").replace("得力", "").replace("deli", "").strip()
             if clean:
                 rows = conn.execute("""
                     SELECT 'DL-' || dp.material_code as code, dp.material_desc as name, dp.category
                     FROM deli_products dp
-                    WHERE dp.material_code = ? OR dp.material_desc = ?
-                """, (clean, keyword)).fetchall()
+                    WHERE dp.material_code = ? OR dp.huohao = ? OR dp.material_desc = ?
+                """, (clean, clean, keyword)).fetchall()
                 for r in rows:
                     results.append({"code": r["code"], "name": r["name"], "category": r["category"]})
 
