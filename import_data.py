@@ -53,7 +53,7 @@ def import_pricing_rules():
 # ===== 导入得力商品 =====
 
 def import_deli_products():
-    wb = openpyxl.load_workbook("/Users/jeson/Downloads/副本得力全品类报价表20250422_副本.xlsx")
+    wb = openpyxl.load_workbook("/Users/jeson/Downloads/副本得力全品类报价表20250422_副本.xlsx", data_only=True)
     ws = wb.active
 
     conn = sqlite3.connect(DB_PATH)
@@ -72,6 +72,13 @@ def import_deli_products():
             category = str(row[1]) if row[1] else None       # 物料组描述
             base_price = float(row[11]) if row[11] else 0    # 单价
 
+            # 价格列（公式计算后的值）
+            price_85_95 = float(row[12]) if row[12] else None
+            price_85 = float(row[13]) if row[13] else None
+            price_86_5 = float(row[14]) if row[14] else None
+            price_1_05 = float(row[15]) if row[15] else None
+            price_1_15 = float(row[16]) if row[16] else None
+
             # 重量可能不是数字，需要安全转换
             try:
                 weight_grams = float(row[22]) if row[22] and str(row[22]).replace('.', '').isdigit() else 0
@@ -84,9 +91,11 @@ def import_deli_products():
             # 插入 deli_products
             cur.execute("""
                 INSERT OR REPLACE INTO deli_products
-                (material_code, huohao, material_desc, category, weight_grams, base_price)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (material_code, huohao, material_desc, category, weight_grams, base_price))
+                (material_code, huohao, material_desc, category, weight_grams, base_price,
+                 price_85_95, price_85, price_86_5, price_1_05, price_1_15)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (material_code, huohao, material_desc, category, weight_grams, base_price,
+                  price_85_95, price_85, price_86_5, price_1_05, price_1_15))
 
             # 同时插入 products 表（统一格式）
             product_code = f"DL-{material_code}"

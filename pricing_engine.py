@@ -288,6 +288,46 @@ def query_best_price(product_code: str) -> Optional[dict]:
         conn.close()
 
 
+def query_price_columns(product_code: str) -> dict:
+    """查询价格列数据"""
+    conn = get_db()
+    try:
+        # 先查 products 表的 supplier_quotes
+        row = conn.execute("""
+            SELECT price_85_95, price_85, price_86_5, price_1_05, price_1_15
+            FROM deli_products
+            WHERE material_code = ?
+        """, (product_code.replace("DL-", ""),)).fetchone()
+
+        if row and any(row):
+            return {
+                "price_85_95": row["price_85_95"],
+                "price_85": row["price_85"],
+                "price_86_5": row["price_86_5"],
+                "price_1_05": row["price_1_05"],
+                "price_1_15": row["price_1_15"]
+            }
+
+        # 如果没有，用默认计算
+        base_row = conn.execute("""
+            SELECT base_price FROM deli_products WHERE material_code = ?
+        """, (product_code.replace("DL-", ""),)).fetchone()
+
+        if base_row and base_row["base_price"]:
+            bp = base_row["base_price"]
+            return {
+                "price_85_95": bp * 0.85 * 0.95,
+                "price_85": bp * 0.85,
+                "price_86_5": bp * 0.865,
+                "price_1_05": bp * 1.05,
+                "price_1_15": bp * 1.15
+            }
+
+        return {}
+    finally:
+        conn.close()
+
+
 def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
     """
     计算最终报价
@@ -320,26 +360,86 @@ def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
     base_price = price_info["base_price"]
     supplier = price_info["supplier_name"]
 
-    # 4. 计算单价
+    # 4. 计算单价（多价格列比价）
     if category == "heavy":
-        # 重货：出厂价(86.5)包邮，单价 = base_price * 86.5
+        # 重货：出厂价(86.5)包邮
         unit_price = base_price * 0.865
         shipping = 0
         shipping_rule = "包邮（重货）"
+    elif category == "copy_paper":
+        # 复印纸
+        unit_price = base_price
+        shipping = 0
+        shipping_rule = "复印纸"
     else:
-        # 普通商品：比价取最低，需要计算运费
-        # 这里简化处理，使用 base_price * 0.85 * 0.95（最低价列）
-        unit_price = base_price * 0.85 * 0.95
-
+        # 普通商品：多价格列含运费比价
         if not region:
-            # 没有地区，先不算运费，提示需要地区
+            # 没有地区，先用最低价列（85*95）
+            unit_price = base_price * 0.85 * 0.95
             shipping = None
             shipping_rule = "需要收货地区才能计算运费"
         else:
             zone = get_zone(region)
             total_weight = weight_kg * quantity
             shipping = calculate_shipping(total_weight, zone)
-            shipping_rule = f"{zone}：{weight_kg}kg/件 × {quantity}件 × {REGION_ZONES[zone]}元/kg + 4.5元基础费"
+
+            # 从数据库读取价格列
+            price_cols = query_price_columns(product_code)
+            if price_cols:
+                # 计算每个价格列的含运费总价，取最低
+                best_price = None
+                best_total = float('inf')
+                best_rule = ""
+
+                for col_name, col_price in price_cols.items():
+                    if col_price is None or col_price <= 0:
+                        continue
+
+                    # 计算该价格列的单价
+                    if col_name == "price_85_95":
+                        # 85*95 需要加运费
+                        unit = col_price
+                        total = unit * quantity + shipping
+                        rule = f"{col_name} + 运费"
+                    elif col_name == "price_85":
+                        # 85 包邮
+                        unit = col_price
+                        total = unit * quantity
+                        rule = f"{col_name} 包邮"
+                    elif col_name == "price_86_5":
+                        # 86.5 包邮
+                        unit = col_price
+                        total = unit * quantity
+                        rule = f"{col_name} 包邮"
+                    elif col_name == "price_1_05":
+                        # 1.05 需要加运费
+                        unit = col_price
+                        total = unit * quantity + shipping
+                        rule = f"{col_name} + 运费"
+                    elif col_name == "price_1_15":
+                        # 1.15 包邮
+                        unit = col_price
+                        total = unit * quantity
+                        rule = f"{col_name} 包邮"
+                    else:
+                        continue
+
+                    if total < best_total:
+                        best_total = total
+                        best_price = unit
+                        best_rule = rule
+
+                if best_price is not None:
+                    unit_price = best_price
+                    shipping_rule = f"{best_rule}，{zone}：{weight_kg}kg/件 × {quantity}件 × {REGION_ZONES[zone]}元/kg + 4.5元基础费"
+                else:
+                    # 没有有效价格列，用默认计算
+                    unit_price = base_price * 0.85 * 0.95
+                    shipping_rule = f"{zone}：{weight_kg}kg/件 × {quantity}件 × {REGION_ZONES[zone]}元/kg + 4.5元基础费"
+            else:
+                # 没有价格列数据，用默认计算
+                unit_price = base_price * 0.85 * 0.95
+                shipping_rule = f"{zone}：{weight_kg}kg/件 × {quantity}件 × {REGION_ZONES[zone]}元/kg + 4.5元基础费"
 
     # 5. 计算总价
     goods_total = unit_price * quantity
