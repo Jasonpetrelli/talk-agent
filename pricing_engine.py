@@ -62,14 +62,16 @@ def get_db():
     return conn
 
 
-def classify_product(product_name: str) -> str:
+def classify_product(product_name: str, product_category: str = "") -> str:
     """判断商品分类：normal/heavy/copy_paper"""
     name = product_name
+    category = product_category or ""
 
     # 复印纸判定（优先）
-    for kw in COPY_PAPER_KEYWORDS:
-        if kw in name:
-            return "copy_paper"
+    if "复印纸" in name or "A4纸" in name:
+        return "copy_paper"
+    if "打印纸" in name and "复印纸" in category:
+        return "copy_paper"
 
     # 重货判定（需排除词）
     for kw in HEAVY_KEYWORDS:
@@ -341,7 +343,7 @@ def build_default_price_columns(base_price: float) -> dict:
     }
 
 
-def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
+def calculate_quote(product_code: str, quantity: int, region: str, apply_low_amount_fee: bool = True) -> dict:
     """
     计算最终报价
     返回: {success, message, details}
@@ -358,7 +360,7 @@ def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
     resolved_product_code = product["product_code"]
 
     # 2. 判断商品分类
-    category = classify_product(product_name)
+    category = classify_product(product_name, product.get("category", ""))
 
     # 复印纸直接返回
     if category == "copy_paper":
@@ -473,7 +475,7 @@ def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
         final_total = goods_total + shipping
         # 低金额规则：总价<50元加5元
         low_amount_fee = 0
-        if category == "normal" and final_total < 50:
+        if apply_low_amount_fee and category == "normal" and final_total < 50:
             low_amount_fee = 5
             final_total += 5
     else:
@@ -517,6 +519,56 @@ def calculate_quote(product_code: str, quantity: int, region: str) -> dict:
             "shipping_rule": shipping_rule,
             "region": region,
             "final_total": final_total,
+            "low_amount_fee": low_amount_fee,
             "weight_kg": weight_kg
+        }
+    }
+
+
+def calculate_order_quote(items: list[dict], region: str) -> dict:
+    """
+    订单级报价。
+    items: [{"product_code": "DL-30011", "quantity": 10}]
+    """
+    results = []
+    total = 0
+
+    for item in items:
+        result = calculate_quote(
+            item["product_code"],
+            item.get("quantity", 1),
+            region,
+            apply_low_amount_fee=False
+        )
+        if not result["success"]:
+            return result
+
+        details = result.get("details", {})
+        if details.get("final_total") is None:
+            return {"success": False, "message": "还需提供收货地区才能计算订单报价"}
+
+        results.append(result)
+        total += details["final_total"]
+
+    low_amount_fee = 5 if total < 50 else 0
+    final_total = total + low_amount_fee
+
+    lines = []
+    for result in results:
+        lines.append(result["message"])
+    if low_amount_fee:
+        lines.append("低金额附加费：5 元（注：因订单总价低于50元，已默认加5元基础费用）")
+    lines.append("─────────────")
+    lines.append(f"订单合计：{final_total:.2f} 元")
+
+    return {
+        "success": True,
+        "message": "\n\n".join(lines),
+        "details": {
+            "items": [r["details"] for r in results],
+            "order_total": total,
+            "low_amount_fee": low_amount_fee,
+            "final_total": final_total,
+            "region": region
         }
     }
